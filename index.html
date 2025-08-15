@@ -27,6 +27,8 @@
     footer{margin-top:16px;color:var(--muted);font-size:.85rem;text-align:center}
   
     .hidden{display:none}
+  
+    input.readonly{background:#0b1222; color:#cbd5e1;}
   </style>
 </head>
 <body>
@@ -47,6 +49,7 @@
         <div class="field">
           <label>Hacimsel Debi Q (m³/h)</label>
           <input id="q" type="number" inputmode="decimal" placeholder="örn. 18 000" />
+          <div class="small" id="qHint">İstersen V ve kanal ölçülerini gir, Q otomatik hesaplansın.</div>
         </div>
         
         <div class="field">
@@ -89,14 +92,48 @@
           <li>Yoğunluk: ρ = p / (R·T) (p = 101325 Pa; R = 287.05 J/kg·K; T = (°C)+273.15)</li>
           <li>Q<sub>m³/s</sub> = Q<sub>m³/h</sub> / 3600</li>
           <li>P<sub>h</sub> = Q · ΔP (W)</li>
-          <li>η = P<sub>h</sub> / (P<sub>e</sub>·1000)</li>
-        </ul>
-      </div>
-    </div>
-    <footer>Uygulama offline çalışır. Ana ekrana ekleyerek hızlı erişim sağlayın.</footer>
-  </div>
+          <li>η = P<sub>h</sub> / (P<sub>e</s
+    function setQInputFrom_m3s(q_m3s) {
+      const qInput = document.getElementById('q');
+      if (!qInput) return;
+      if (q_m3s != null) {
+        const q_m3h_auto = q_m3s * 3600;
+        qInput.value = Number.isFinite(q_m3h_auto) ? q_m3h_auto.toFixed(3) : '';
+        qInput.readOnly = true;
+        qInput.classList.add('readonly');
+        const hint = document.getElementById('qHint');
+        if (hint) { hint.textContent = 'Debi (Q) otomatik: V·A ile hesaplandı'; }
+      } else {
+        qInput.readOnly = false;
+        qInput.classList.remove('readonly');
+        const hint = document.getElementById('qHint');
+        if (hint) { hint.textContent = 'İstersen V ve kanal ölçülerini gir, Q otomatik hesaplansın.'; }
+      }
+    }
 
-  <script>
+    function updateQFromVA() {
+      const q_m3s_vel = qFromVelocity_m3s();
+      if (q_m3s_vel != null) {
+        setQInputFrom_m3s(q_m3s_vel);
+      } else {
+        setQInputFrom_m3s(null);
+      }
+    }
+
+    // Kancalar: kanal tipi ve ölçüler/hız değişince Q'yu otomatik hesapla
+    (function attachAutoQListeners(){
+      const ids = ['ductType','diameter','width','height','velocity'];
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', updateQFromVA);
+          el.addEventListener('change', updateQFromVA);
+        }
+      });
+      // İlk yüklemede de deneyelim
+      window.addEventListener('DOMContentLoaded', updateQFromVA);
+    })();
+
     function ductArea_m2() {
       const type = (document.getElementById('ductType')?.value || 'none');
       if (type === 'round') {
@@ -152,7 +189,20 @@
       return Number(n).toLocaleString('tr-TR', {maximumFractionDigits: digits});
     }
 
-    document.getElementById('calc').addEventListener('click', () => {
+    
+    function autoFillQ() {
+      const q_s = qFromVelocity_m3s();
+      if (q_s != null) {
+        const q_h = q_s * 3600;
+        document.getElementById('q').value = q_h.toFixed(3);
+      }
+    }
+    ['ductType','diameter','width','height','velocity'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', autoFillQ);
+    });
+
+document.getElementById('calc').addEventListener('click', () => {
       const temp = parseFloat(document.getElementById('temp').value);
       const dp = parseFloat(document.getElementById('dp').value);
       const q_m3h = parseFloat(document.getElementById('q').value);
@@ -180,6 +230,11 @@
         ρ (Yoğunluk): <strong>${fmt(rho, 4)} kg/m³</strong><br>
         Q: <strong>${fmt(q_m3s, 4)} m³/s</strong> (${fmt(q_m3h)} m³/h)<br>${(A && isFinite(v_in) && v_in>0) ? `A (Kesit): <strong>${fmt(A,4)} m²</strong> · V: <strong>${fmt(v_in,3)} m/s</strong><br>` : ''}
         ṁ (Kütlesel debi): <strong>${fmt(mdot, 4)} kg/s</strong><br>
+        P_h (Hidrolik güç): <strong>${fmt(ph_w, 2)} W</strong><br>
+        η (Fan verimi): <strong>${fmt(eta*100, 2)} %</strong>
+      `;
+    });
+  /s</strong><br>
         P_h (Hidrolik güç): <strong>${fmt(ph_w, 2)} W</strong><br>
         η (Fan verimi): <strong>${fmt(eta*100, 2)} %</strong>
       `;
