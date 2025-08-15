@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fan Verimi Hesaplayıcı</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --text:#e5e7eb; --muted:#9ca3af; --accent:#22c55e; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif}
+    .container{max-width:720px;margin:0 auto;padding:20px}
+    .card{background:var(--card);border-radius:18px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    h1{font-size:1.6rem;margin:0 0 12px}
+    p.caption{color:var(--muted);margin-top:0}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .field{display:flex;flex-direction:column;gap:6px}
+    label{font-size:.95rem;color:var(--muted)}
+    input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #1f2937;background:#0b1220;color:var(--text);outline:none}
+    input:focus{border-color:#334155}
+    .btn{width:100%;padding:12px 16px;border:none;border-radius:12px;margin-top:8px;background:var(--accent);color:#052e16;font-weight:700;font-size:1rem}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .result{margin-top:16px;padding:14px;border-radius:12px;background:#0b1220;border:1px solid #1f2937}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+    .small{font-size:.9rem;color:var(--muted)}
+    footer{margin-top:16px;color:var(--muted);font-size:.85rem;text-align:center}
+  
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>Fan Verimi Hesaplayıcı</h1>
+      <p class="caption">Sıcaklığa göre yoğunluk otomatik; birimler: ΔP <strong>Pa</strong>, Q <strong>m³/h</strong>, P<sub>e</sub> <strong>kW</strong>.</p>
+
+      <div class="grid">
+        <div class="field">
+          <label>Sıcaklık (°C)</label>
+          <input id="temp" type="number" inputmode="decimal" value="20" step="0.1" />
+        </div>
+        <div class="field">
+          <label>Basınç Farkı ΔP (Pa)</label>
+          <input id="dp" type="number" inputmode="decimal" placeholder="örn. 600" />
+        </div>
+        <div class="field">
+          <label>Hacimsel Debi Q (m³/h)</label>
+          <input id="q" type="number" inputmode="decimal" placeholder="örn. 18 000" />
+        </div>
+        
+        <div class="field">
+          <label>Kanal Tipi</label>
+          <select id="ductType">
+            <option value="none" selected>Seçiniz</option>
+            <option value="round">Daire</option>
+            <option value="rect">Dikdörtgen</option>
+          </select>
+        </div>
+        <div class="field duct round hidden">
+          <label>Çap (m)</label>
+          <input id="diameter" type="number" inputmode="decimal" step="0.001" placeholder="örn. 0.5" />
+        </div>
+        <div class="field duct rect hidden">
+          <label>En (m)</label>
+          <input id="width" type="number" inputmode="decimal" step="0.001" placeholder="örn. 0.6" />
+        </div>
+        <div class="field duct rect hidden">
+          <label>Boy (m)</label>
+          <input id="height" type="number" inputmode="decimal" step="0.001" placeholder="örn. 0.4" />
+        </div>
+        <div class="field">
+          <label>Ortalama Hız V (m/s)</label>
+          <input id="velocity" type="number" inputmode="decimal" step="0.01" placeholder="örn. 7" />
+        </div>
+<div class="field">
+          <label>Elektriksel Güç P<sub>e</sub> (kW)</label>
+          <input id="pe" type="number" inputmode="decimal" placeholder="örn. 250" />
+        </div>
+      </div>
+
+      <button class="btn" id="calc">HESAPLA</button>
+
+      <div class="result mono" id="out" style="display:none"></div>
+
+      <div class="small">
+        Formüller:
+        <ul>
+          <li>Yoğunluk: ρ = p / (R·T) (p = 101325 Pa; R = 287.05 J/kg·K; T = (°C)+273.15)</li>
+          <li>Q<sub>m³/s</sub> = Q<sub>m³/h</sub> / 3600</li>
+          <li>P<sub>h</sub> = Q · ΔP (W)</li>
+          <li>η = P<sub>h</sub> / (P<sub>e</sub>·1000)</li>
+        </ul>
+      </div>
+    </div>
+    <footer>Uygulama offline çalışır. Ana ekrana ekleyerek hızlı erişim sağlayın.</footer>
+  </div>
+
+  <script>
+    function ductArea_m2() {
+      const type = (document.getElementById('ductType')?.value || 'none');
+      if (type === 'round') {
+        const d = parseFloat(document.getElementById('diameter').value);
+        if (!isFinite(d) || d <= 0) return null;
+        return Math.PI * (d*d) / 4; // m²
+      } else if (type === 'rect') {
+        const w = parseFloat(document.getElementById('width').value);
+        const h = parseFloat(document.getElementById('height').value);
+        if (!isFinite(w) || !isFinite(h) || w <= 0 || h <= 0) return null;
+        return w * h; // m²
+      }
+      return null;
+    }
+
+    function qFromVelocity_m3s() {
+      const v = parseFloat(document.getElementById('velocity').value);
+      if (!isFinite(v) || v <= 0) return null;
+      const A = ductArea_m2();
+      if (A == null) return null;
+      return v * A; // m³/s
+    }
+
+    // Duct type show/hide
+    (function initDuctUI(){
+      const duct = document.getElementById('ductType');
+      const show = (type) => {
+        document.querySelectorAll('.duct.round').forEach(el=>el.classList.toggle('hidden', type!=='round'));
+        document.querySelectorAll('.duct.rect').forEach(el=>el.classList.toggle('hidden', type!=='rect'));
+      };
+      if (duct) {
+        duct.addEventListener('change', () => show(duct.value));
+        show(duct.value);
+      }
+    })();
+
+    // PWA: register service worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').catch(console.error);
+      });
+    }
+
+    function calcDensity(tempC) {
+      const p = 101325; // Pa
+      const R = 287.05; // J/kg.K
+      const T = tempC + 273.15; // K
+      return p / (R * T); // kg/m³
+    }
+
+    function fmt(n, digits=3) {
+      if (isNaN(n) || !isFinite(n)) return '-';
+      return Number(n).toLocaleString('tr-TR', {maximumFractionDigits: digits});
+    }
+
+    document.getElementById('calc').addEventListener('click', () => {
+      const temp = parseFloat(document.getElementById('temp').value);
+      const dp = parseFloat(document.getElementById('dp').value);
+      const q_m3h = parseFloat(document.getElementById('q').value);
+      const pe_kw = parseFloat(document.getElementById('pe').value);
+
+      if ([temp, dp, q_m3h, pe_kw].some(v => isNaN(v))) {
+        alert('Lütfen tüm alanları doldurun.');
+        return;
+      }
+      if (dp < 0 || q_m3h < 0 || pe_kw <= 0) {
+        alert('ΔP, Q pozitif; P_e pozitif olmalıdır.');
+        return;
+      }
+
+      const rho = calcDensity(temp);             // kg/m³
+      const q_m3s = q_m3h / 3600;                // m³/s
+      const mdot = rho * q_m3s;                  // kg/s
+      const ph_w = q_m3s * dp;                   // W
+      const eta = ph_w / (pe_kw * 1000);         // -
+
+      const out = document.getElementById('out');
+      out.style.display = 'block';
+      const A = ductArea_m2(); const v_in = parseFloat(document.getElementById('velocity').value);
+      out.innerHTML = `
+        ρ (Yoğunluk): <strong>${fmt(rho, 4)} kg/m³</strong><br>
+        Q: <strong>${fmt(q_m3s, 4)} m³/s</strong> (${fmt(q_m3h)} m³/h)<br>${(A && isFinite(v_in) && v_in>0) ? `A (Kesit): <strong>${fmt(A,4)} m²</strong> · V: <strong>${fmt(v_in,3)} m/s</strong><br>` : ''}
+        ṁ (Kütlesel debi): <strong>${fmt(mdot, 4)} kg/s</strong><br>
+        P_h (Hidrolik güç): <strong>${fmt(ph_w, 2)} W</strong><br>
+        η (Fan verimi): <strong>${fmt(eta*100, 2)} %</strong>
+      `;
+    });
+  </script>
+</body>
+</html>
